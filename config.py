@@ -10,7 +10,7 @@ CHAT_ID = os.getenv("CHAT_ID", "5294292729")
 
 # === ФИЛЬТРЫ ===
 # Минимальная оригинальная цена игры (в гривнах)
-MIN_ORIGINAL_PRICE = int(os.getenv("MIN_ORIGINAL_PRICE", "250"))
+MIN_ORIGINAL_PRICE = int(os.getenv("MIN_ORIGINAL_PRICE", "100"))
 
 # Минимальный процент скидки
 MIN_DISCOUNT = int(os.getenv("MIN_DISCOUNT", "60"))
