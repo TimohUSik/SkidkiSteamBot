@@ -9,15 +9,18 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8433499477:AAFbv5nNgCNETSiX1ur8wQB
 CHAT_ID = os.getenv("CHAT_ID", "5294292729")
 
 # === ФИЛЬТРЫ ===
-# Минимальная оригинальная цена игры (в гривнах)
-MIN_ORIGINAL_PRICE = int(os.getenv("MIN_ORIGINAL_PRICE", "100"))
+# Минимальная оригинальная цена игры (в рублях)
+MIN_ORIGINAL_PRICE = int(os.getenv("MIN_ORIGINAL_PRICE", "500"))
 
 # Минимальный процент скидки
 MIN_DISCOUNT = int(os.getenv("MIN_DISCOUNT", "50"))
 
 # === STEAM ===
-# Код страны для получения цен в гривнах
-COUNTRY_CODE = os.getenv("COUNTRY_CODE", "ua")
+# Код страны для получения цен в рублях
+COUNTRY_CODE = os.getenv("COUNTRY_CODE", "ru")
+
+# Наценка Steam для России (1.10 = +10%)
+PRICE_MARKUP = float(os.getenv("PRICE_MARKUP", "1.10"))
 
 # Интервал проверки скидок (в секундах)
 # 3600 = 1 час

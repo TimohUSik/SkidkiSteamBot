@@ -17,51 +17,74 @@ WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.json")
 def get_game_details(app_id: int) -> Optional[dict]:
     """
     Получает детальную информацию об игре из Steam Store API
-    
-    Args:
-        app_id: Steam App ID игры
-        
-    Returns:
-        Словарь с информацией об игре или None при ошибке
+    Получает цены в UAH и RUB
     """
-    url = f"https://store.steampowered.com/api/appdetails"
-    params = {
-        "appids": app_id,
-        "cc": config.COUNTRY_CODE,
-        "l": "russian"
-    }
+    url = "https://store.steampowered.com/api/appdetails"
     
+    result = None
+    
+    # Получаем цены в гривнах (UAH)
     try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        params_ua = {"appids": app_id, "cc": "ua", "l": "russian"}
+        response_ua = requests.get(url, params=params_ua, timeout=10)
+        data_ua = response_ua.json()
         
-        if str(app_id) in data and data[str(app_id)]["success"]:
-            game_data = data[str(app_id)]["data"]
+        if str(app_id) in data_ua and data_ua[str(app_id)]["success"]:
+            game_data = data_ua[str(app_id)]["data"]
             
-            # Проверяем наличие информации о цене
             if "price_overview" not in game_data:
                 return None
                 
-            price_info = game_data["price_overview"]
-            
-            # Проверяем тип контента (исключаем DLC)
+            price_ua = game_data["price_overview"]
             content_type = game_data.get("type", "game")
             
-            return {
+            # Базовые цены в гривнах
+            original_uah = price_ua.get("initial", 0) / 100
+            final_uah = price_ua.get("final", 0) / 100
+            
+            result = {
                 "app_id": app_id,
                 "name": game_data.get("name", "Неизвестно"),
-                "original_price": price_info.get("initial", 0) / 100,
-                "final_price": price_info.get("final", 0) / 100,
-                "discount_percent": price_info.get("discount_percent", 0),
-                "currency": price_info.get("currency", "UAH"),
+                "original_price": original_uah,  # Временно UAH, заменим на RUB ниже если есть
+                "final_price": final_uah,
+                "discount_percent": price_ua.get("discount_percent", 0),
                 "url": f"https://store.steampowered.com/app/{app_id}/",
-                "type": content_type  # game, dlc, demo, etc.
+                "type": content_type,
+                "uah_original": original_uah,
+                "uah_final": final_uah,
+                "currency": "UAH"
             }
     except Exception as e:
-        print(f"Ошибка при получении данных для app_id {app_id}: {e}")
+        print(f"Ошибка UAH для app_id {app_id}: {e}")
+        return None
     
-    return None
+    # Получаем цены в рублях (RUB) + наценка
+    try:
+        params_ru = {"appids": app_id, "cc": "ru", "l": "russian"}
+        response_ru = requests.get(url, params=params_ru, timeout=10)
+        data_ru = response_ru.json()
+        
+        if str(app_id) in data_ru and data_ru[str(app_id)]["success"]:
+            game_data_ru = data_ru[str(app_id)]["data"]
+            if "price_overview" in game_data_ru:
+                price_ru = game_data_ru["price_overview"]
+                markup = getattr(config, 'PRICE_MARKUP', 1.10)
+                
+                rub_orig = price_ru.get("initial", 0) / 100 * markup
+                rub_final = price_ru.get("final", 0) / 100 * markup
+                
+                result["rub_original"] = rub_orig
+                result["rub_final"] = rub_final
+                
+                # Обновляем основные поля для фильтра (т.к. лимит 500 в конфиге - это рубли)
+                result["original_price"] = rub_orig
+                result["final_price"] = rub_final
+                result["currency"] = "₽"
+    except Exception as e:
+        print(f"Ошибка RUB для app_id {app_id}: {e}")
+        # Продолжаем без рублей (но тогда фильтр 500 отсечет дешевые игры в гривнах)
+    
+    return result
 
 
 def get_featured_deals() -> list:
@@ -276,9 +299,25 @@ def check_watchlist_deals() -> list:
 
 def format_game_message(game: dict) -> str:
     """Форматирует информацию об игре для вывода"""
+    
+    # Формируем строку с ценами
+    prices = ""
+    
+    # Гривны
+    if "uah_original" in game:
+        prices += f"🇺🇦 ~~{game['uah_original']:.0f}~~ → *{game['uah_final']:.0f} UAH*\n"
+    elif config.COUNTRY_CODE == "ua":
+        prices += f"🇺🇦 ~~{game['original_price']:.0f}~~ → *{game['final_price']:.0f} UAH*\n"
+        
+    # Рубли (если есть)
+    if "rub_original" in game:
+        prices += f"🇷🇺 ~~{game['rub_original']:.0f}~~ → *{game['rub_final']:.0f} ₽*\n"
+    elif config.COUNTRY_CODE == "ru":
+         prices += f"🇷🇺 ~~{game['original_price']:.0f}~~ → *{game['final_price']:.0f} ₽*\n"
+
     return (
         f"🎮 *{game['name']}*\n"
-        f"💰 ~~{game['original_price']:.0f}~~ → *{game['final_price']:.0f} {game['currency']}*\n"
+        f"{prices}"
         f"🔥 Скидка: *-{game['discount_percent']}%*\n"
         f"🔗 {game['url']}"
     )
