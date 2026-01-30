@@ -62,26 +62,21 @@ def get_game_details(app_id: int) -> Optional[dict]:
 
 def get_featured_deals() -> list:
     """
-    Получает список рекомендуемых игр со скидками
+    Получает список игр со скидками из нескольких источников
     
     Returns:
         Список игр со скидками
     """
-    url = "https://store.steampowered.com/api/featuredcategories"
-    params = {
-        "cc": config.COUNTRY_CODE,
-        "l": "russian"
-    }
-    
     games = []
+    app_ids = set()
     
+    # === Источник 1: Featured Categories ===
     try:
+        url = "https://store.steampowered.com/api/featuredcategories"
+        params = {"cc": config.COUNTRY_CODE, "l": "russian"}
         response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
-        
-        # Собираем app_ids из разных категорий
-        app_ids = set()
         
         # Specials (распродажи)
         if "specials" in data and "items" in data["specials"]:
@@ -95,18 +90,60 @@ def get_featured_deals() -> list:
                 if "id" in item and item.get("discount_percent", 0) > 0:
                     app_ids.add(item["id"])
                     
-        print(f"Найдено {len(app_ids)} игр со скидками для анализа...")
-        
-        # Получаем детали для каждой игры
-        for app_id in app_ids:
-            game = get_game_details(app_id)
-            if game:
-                games.append(game)
-                
     except Exception as e:
-        print(f"Ошибка при получении списка скидок: {e}")
+        print(f"Ошибка featuredcategories: {e}")
+    
+    # === Источник 2: Search API с фильтром по скидкам ===
+    try:
+        url = "https://store.steampowered.com/api/storesearch/"
+        params = {
+            "term": "*",
+            "l": "russian",
+            "cc": config.COUNTRY_CODE,
+        }
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if "items" in data:
+                for item in data["items"]:
+                    if "id" in item:
+                        app_ids.add(item["id"])
+    except Exception as e:
+        print(f"Ошибка storesearch: {e}")
+    
+    # === Источник 3: Топ продаж ===
+    try:
+        # Популярные новинки
+        url = "https://store.steampowered.com/api/featured"
+        params = {"cc": config.COUNTRY_CODE, "l": "russian"}
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            
+            for key in ["large_capsules", "featured_win"]:
+                if key in data:
+                    for item in data[key]:
+                        if item.get("discount_percent", 0) > 0 and "id" in item:
+                            app_ids.add(item["id"])
+    except Exception as e:
+        print(f"Ошибка featured: {e}")
+    
+    print(f"📊 Найдено {len(app_ids)} игр для анализа...")
+    
+    # Получаем детали для каждой игры
+    count = 0
+    for app_id in list(app_ids)[:100]:  # Лимит 100 игр
+        game = get_game_details(app_id)
+        if game and game["discount_percent"] > 0:
+            games.append(game)
+            count += 1
+            if count % 10 == 0:
+                print(f"  Обработано {count} игр...")
+    
+    print(f"✅ Получено {len(games)} игр со скидками")
     
     return games
+
 
 
 def filter_games(games: list) -> list:
