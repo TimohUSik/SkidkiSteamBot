@@ -150,7 +150,7 @@ def get_featured_deals() -> list:
 
 
 
-def filter_games(games: list) -> list:
+def filter_games(games: list) -> tuple[list, list]:
     """
     Фильтрует игры по критериям из конфига
     
@@ -158,15 +158,12 @@ def filter_games(games: list) -> list:
         games: Список игр для фильтрации
         
     Returns:
-        Отфильтрованный список игр
+        Кортеж (список игр, список DLC)
     """
-    filtered = []
+    filtered_games = []
+    filtered_dlc = []
     
     for game in games:
-        # Исключаем DLC и демо
-        if game.get("type", "game") not in ["game"]:
-            continue
-            
         # Проверяем оригинальную цену >= MIN_ORIGINAL_PRICE
         if game["original_price"] < config.MIN_ORIGINAL_PRICE:
             continue
@@ -174,13 +171,18 @@ def filter_games(games: list) -> list:
         # Проверяем скидку >= MIN_DISCOUNT
         if game["discount_percent"] < config.MIN_DISCOUNT:
             continue
-            
-        filtered.append(game)
+        
+        # Разделяем игры и DLC
+        if game.get("type", "game") == "game":
+            filtered_games.append(game)
+        elif game.get("type") == "dlc":
+            filtered_dlc.append(game)
     
     # Сортируем по скидке (от большей к меньшей)
-    filtered.sort(key=lambda x: x["discount_percent"], reverse=True)
+    filtered_games.sort(key=lambda x: x["discount_percent"], reverse=True)
+    filtered_dlc.sort(key=lambda x: x["discount_percent"], reverse=True)
     
-    return filtered
+    return filtered_games, filtered_dlc
 
 
 # === WATCHLIST ===

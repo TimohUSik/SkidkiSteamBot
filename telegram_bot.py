@@ -73,9 +73,11 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Получаем скидки
     games = steam_bot.get_featured_deals()
-    filtered = steam_bot.filter_games(games)
+    filtered_games, filtered_dlc = steam_bot.filter_games(games)
     
-    if not filtered:
+    total = len(filtered_games) + len(filtered_dlc)
+    
+    if total == 0:
         await update.message.reply_text(
             f"😔 Не найдено игр с:\n"
             f"• Ценой ≥{config.MIN_ORIGINAL_PRICE} грн\n"
@@ -83,19 +85,31 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # Отправляем результаты
-    header = f"🔥 *Найдено {len(filtered)} игр:*\n\n"
-    await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+    # === ИГРЫ ===
+    if filtered_games:
+        header = f"🎮 *ИГРЫ ({len(filtered_games)}):*\n"
+        await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+        
+        for game in filtered_games[:8]:  # Максимум 8 игр
+            msg = steam_bot.format_game_message(game)
+            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            await asyncio.sleep(0.3)
+        
+        if len(filtered_games) > 8:
+            await update.message.reply_text(f"... и ещё {len(filtered_games) - 8} игр")
     
-    for game in filtered[:10]:  # Максимум 10 игр
-        msg = steam_bot.format_game_message(game)
-        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-        await asyncio.sleep(0.5)  # Небольшая задержка
-    
-    if len(filtered) > 10:
-        await update.message.reply_text(
-            f"... и ещё {len(filtered) - 10} игр"
-        )
+    # === DLC ===
+    if filtered_dlc:
+        header = f"\n📦 *DLC ({len(filtered_dlc)}):*\n"
+        await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+        
+        for dlc in filtered_dlc[:5]:  # Максимум 5 DLC
+            msg = steam_bot.format_game_message(dlc)
+            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+            await asyncio.sleep(0.3)
+        
+        if len(filtered_dlc) > 5:
+            await update.message.reply_text(f"... и ещё {len(filtered_dlc) - 5} DLC")
     
     # Проверяем watchlist
     watchlist_deals = steam_bot.check_watchlist_deals()
