@@ -13,7 +13,7 @@ CHAT_ID = os.getenv("CHAT_ID", "5294292729")
 MIN_ORIGINAL_PRICE = int(os.getenv("MIN_ORIGINAL_PRICE", "100"))
 
 # Минимальный процент скидки
-MIN_DISCOUNT = int(os.getenv("MIN_DISCOUNT", "60"))
+MIN_DISCOUNT = int(os.getenv("MIN_DISCOUNT", "50"))
 
 # === STEAM ===
 # Код страны для получения цен в гривнах

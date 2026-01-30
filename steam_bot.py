@@ -45,14 +45,18 @@ def get_game_details(app_id: int) -> Optional[dict]:
                 
             price_info = game_data["price_overview"]
             
+            # Проверяем тип контента (исключаем DLC)
+            content_type = game_data.get("type", "game")
+            
             return {
                 "app_id": app_id,
                 "name": game_data.get("name", "Неизвестно"),
-                "original_price": price_info.get("initial", 0) / 100,  # Конвертируем копейки в гривны
+                "original_price": price_info.get("initial", 0) / 100,
                 "final_price": price_info.get("final", 0) / 100,
                 "discount_percent": price_info.get("discount_percent", 0),
                 "currency": price_info.get("currency", "UAH"),
-                "url": f"https://store.steampowered.com/app/{app_id}/"
+                "url": f"https://store.steampowered.com/app/{app_id}/",
+                "type": content_type  # game, dlc, demo, etc.
             }
     except Exception as e:
         print(f"Ошибка при получении данных для app_id {app_id}: {e}")
@@ -159,6 +163,10 @@ def filter_games(games: list) -> list:
     filtered = []
     
     for game in games:
+        # Исключаем DLC и демо
+        if game.get("type", "game") not in ["game"]:
+            continue
+            
         # Проверяем оригинальную цену >= MIN_ORIGINAL_PRICE
         if game["original_price"] < config.MIN_ORIGINAL_PRICE:
             continue
