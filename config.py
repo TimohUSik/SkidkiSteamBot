@@ -5,7 +5,7 @@ import os
 # На Railway используйте переменные окружения!
 # Локально можно вписать значения напрямую
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8433499477:AAFbv5nNgCNETSiX1ur8wQBAr6b2GK6sP3s")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7830591298:AAH_fCh0HamT7dbG5bFcvyTJOfz6jTa81vI")
 CHAT_ID = os.getenv("CHAT_ID", "5294292729")
 
 # === ФИЛЬТРЫ ===
