@@ -1,16 +1,8 @@
-"""
-Steam Discount Bot - Telegram бот
-Уведомления о скидках в Steam
-"""
-
-import asyncio
-import logging
 from telegram import (
     Update, 
     InlineKeyboardButton, 
     InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton
+    BotCommand
 )
 from telegram.ext import (
     Application, 
@@ -20,20 +12,17 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
-from telegram.constants import ParseMode
+# ... (imports)
 
-import config
-import steam_bot
-
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# Храним уже отправленные уведомления (чтобы не спамить)
-notified_deals = set()
+async def post_init(application: Application):
+    """Настройка бота при запуске (добавление меню команд)"""
+    commands = [
+        BotCommand("check", "🔍 Проверить скидки"),
+        BotCommand("watchlist", "📋 Мой список"),
+        BotCommand("help", "ℹ️ Справка"),
+    ]
+    await application.bot.set_my_commands(commands)
+    print("✅ Меню команд обновлено")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -44,17 +33,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📋 *Текущие фильтры:*\n"
         f"• Базовая цена: ≥{config.MIN_ORIGINAL_PRICE} грн\n"
         f"• Скидка: ≥{config.MIN_DISCOUNT}%\n\n"
-        "Воспользуйтесь меню ниже 👇"
+        "Жмите кнопку *Меню* слева внизу 👇"
     )
     
-    # Создаем клавиатуру меню
-    keyboard = [
-        [KeyboardButton("🔍 Проверить скидки"), KeyboardButton("📋 Мой список")],
-        [KeyboardButton("ℹ️ Помощь")]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
+
+
+# ... (rest of the code)
+
+def main():
+    # ... (start of main)
     
-    await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+    # Создаём приложение
+    app = Application.builder().token(config.TELEGRAM_TOKEN).post_init(post_init).build()
+    
+    # ... (handlers)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
