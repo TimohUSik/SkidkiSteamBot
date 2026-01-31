@@ -12,7 +12,22 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
-# ... (imports)
+from telegram.constants import ParseMode
+
+import logging
+import asyncio
+import config
+import steam_bot
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# Храним уже отправленные уведомления (чтобы не спамить)
+notified_deals = set()
 
 async def post_init(application: Application):
     """Настройка бота при запуске (добавление меню команд)"""
