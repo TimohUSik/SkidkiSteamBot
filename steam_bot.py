@@ -244,18 +244,21 @@ def add_to_watchlist(app_id: int) -> tuple[bool, str]:
     game_info = get_game_details(app_id)
     
     if not game_info:
-        # Пробуем получить хотя бы название
+        # Если не удалось получить детальную инфо (например, нет цены или блок региона),
+        # пробуем получить хотя бы название через нейтральный регион (US)
         try:
             url = f"https://store.steampowered.com/api/appdetails"
-            params = {"appids": app_id, "cc": config.COUNTRY_CODE}
+            params = {"appids": app_id, "cc": "us"}  # Используем US чтобы обойти блокировки
             response = requests.get(url, params=params, timeout=10)
             data = response.json()
             
             if str(app_id) in data and data[str(app_id)]["success"]:
-                name = data[str(app_id)]["data"].get("name", f"App {app_id}")
+                game_data = data[str(app_id)]["data"]
+                name = game_data.get("name", f"App {app_id}")
             else:
                 return False, f"Игра с ID {app_id} не найдена в Steam"
-        except:
+        except Exception as e:
+            print(f"Ошибка при добавлении {app_id}: {e}")
             return False, f"Не удалось получить информацию об игре {app_id}"
     else:
         name = game_info["name"]
