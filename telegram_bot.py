@@ -5,12 +5,20 @@ Steam Discount Bot - Telegram бот
 
 import asyncio
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 from telegram.ext import (
     Application, 
     CommandHandler, 
     ContextTypes,
-    CallbackQueryHandler
+    CallbackQueryHandler,
+    MessageHandler,
+    filters
 )
 from telegram.constants import ParseMode
 
@@ -36,16 +44,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📋 *Текущие фильтры:*\n"
         f"• Базовая цена: ≥{config.MIN_ORIGINAL_PRICE} грн\n"
         f"• Скидка: ≥{config.MIN_DISCOUNT}%\n\n"
-        "*Команды:*\n"
-        "/check - проверить скидки сейчас\n"
-        "/watchlist - ваш список отслеживания\n"
-        "/add `<app_id>` - добавить игру\n"
-        "/remove `<app_id>` - удалить игру\n"
-        "/help - справка\n\n"
-        f"🔄 Автопроверка каждые {config.CHECK_INTERVAL // 60} мин."
+        "Воспользуйтесь меню ниже 👇"
     )
     
-    await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
+    # Создаем клавиатуру меню
+    keyboard = [
+        [KeyboardButton("🔍 Проверить скидки"), KeyboardButton("📋 Мой список")],
+        [KeyboardButton("ℹ️ Помощь")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -287,6 +296,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.message.reply_text("❌ Ошибка при удалении.")
 
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка текстовых сообщений (меню)"""
+    text = update.message.text
+    
+    if text == "🔍 Проверить скидки":
+        await check_deals(update, context)
+    elif text == "📋 Мой список":
+        await show_watchlist(update, context)
+    elif text == "ℹ️ Помощь":
+        await help_command(update, context)
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Логирует ошибки при обработке обновлений."""
     logger.error(Exception(context.error), exc_info=context.error)
@@ -321,7 +342,10 @@ def main():
     app.add_handler(CommandHandler("add", add_game))
     app.add_handler(CommandHandler("remove", remove_game))
     
-    # Обработчик кнопок
+    # Обработчик кнопок меню (текст)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Обработчик инлайн-кнопок
     app.add_handler(CallbackQueryHandler(button_handler))
     
     # Добавляем автоматическую проверку
