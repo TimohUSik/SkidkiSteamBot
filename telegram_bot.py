@@ -289,18 +289,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.message.reply_text("❌ Ошибка при удалении.")
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка текстовых сообщений (меню)"""
-    text = update.message.text
-    
-    if text == "🔍 Проверить скидки":
-        await check_deals(update, context)
-    elif text == "📋 Мой список":
-        await show_watchlist(update, context)
-    elif text == "ℹ️ Помощь":
-        await help_command(update, context)
-
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Логирует ошибки при обработке обновлений."""
     logger.error(Exception(context.error), exc_info=context.error)
@@ -334,9 +322,6 @@ def main():
     app.add_handler(CommandHandler("list", show_watchlist))  # Алиас
     app.add_handler(CommandHandler("add", add_game))
     app.add_handler(CommandHandler("remove", remove_game))
-    
-    # Обработчик кнопок меню (текст)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Обработчик инлайн-кнопок
     app.add_handler(CallbackQueryHandler(button_handler))
