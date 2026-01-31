@@ -13,6 +13,11 @@ import config
 # Путь к файлу watchlist
 WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "watchlist.json")
 
+# Заголовки для запросов (чтобы Steam не блокировал)
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+}
+
 
 def get_game_details(app_id: int) -> Optional[dict]:
     """
@@ -26,7 +31,7 @@ def get_game_details(app_id: int) -> Optional[dict]:
     # Получаем цены в гривнах (UAH)
     try:
         params_ua = {"appids": app_id, "cc": "ua", "l": "russian"}
-        response_ua = requests.get(url, params=params_ua, timeout=10)
+        response_ua = requests.get(url, params=params_ua, headers=HEADERS, timeout=10)
         data_ua = response_ua.json()
         
         if str(app_id) in data_ua and data_ua[str(app_id)]["success"]:
@@ -61,7 +66,7 @@ def get_game_details(app_id: int) -> Optional[dict]:
     # Получаем цены в рублях (RUB) + наценка
     try:
         params_ru = {"appids": app_id, "cc": "ru", "l": "russian"}
-        response_ru = requests.get(url, params=params_ru, timeout=10)
+        response_ru = requests.get(url, params=params_ru, headers=HEADERS, timeout=10)
         data_ru = response_ru.json()
         
         if str(app_id) in data_ru and data_ru[str(app_id)]["success"]:
@@ -101,7 +106,7 @@ def get_featured_deals() -> list:
     try:
         url = "https://store.steampowered.com/api/featuredcategories"
         params = {"cc": config.COUNTRY_CODE, "l": "russian"}
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         response.raise_for_status()
         data = response.json()
         
@@ -128,7 +133,7 @@ def get_featured_deals() -> list:
             "l": "russian",
             "cc": config.COUNTRY_CODE,
         }
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         if response.status_code == 200:
             data = response.json()
             if "items" in data:
@@ -143,7 +148,7 @@ def get_featured_deals() -> list:
         # Популярные новинки
         url = "https://store.steampowered.com/api/featured"
         params = {"cc": config.COUNTRY_CODE, "l": "russian"}
-        response = requests.get(url, params=params, timeout=15)
+        response = requests.get(url, params=params, headers=HEADERS, timeout=15)
         if response.status_code == 200:
             data = response.json()
             
@@ -249,7 +254,7 @@ def add_to_watchlist(app_id: int) -> tuple[bool, str]:
         try:
             url = f"https://store.steampowered.com/api/appdetails"
             params = {"appids": app_id, "cc": "us"}  # Используем US чтобы обойти блокировки
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, headers=HEADERS, timeout=10)
             data = response.json()
             
             if str(app_id) in data and data[str(app_id)]["success"]:
