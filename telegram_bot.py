@@ -71,56 +71,63 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /check - проверить скидки"""
     await update.message.reply_text("🔍 Ищу выгодные скидки...")
     
-    # Получаем скидки
-    games = steam_bot.get_featured_deals()
-    filtered_games, filtered_dlc = steam_bot.filter_games(games)
+    loop = asyncio.get_running_loop()
     
-    total = len(filtered_games) + len(filtered_dlc)
-    
-    if total == 0:
-        await update.message.reply_text(
-            f"😔 Не найдено игр с:\n"
-            f"• Ценой ≥{config.MIN_ORIGINAL_PRICE} грн\n"
-            f"• Скидкой ≥{config.MIN_DISCOUNT}%"
-        )
-        return
-    
-    # === ИГРЫ ===
-    if filtered_games:
-        header = f"🎮 *ИГРЫ ({len(filtered_games)}):*\n"
-        await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+    try:
+        # Выполняем тяжелые запросы в отдельном потоке
+        games = await loop.run_in_executor(None, steam_bot.get_featured_deals)
+        filtered_games, filtered_dlc = await loop.run_in_executor(None, steam_bot.filter_games, games)
         
-        for game in filtered_games[:8]:  # Максимум 8 игр
-            msg = steam_bot.format_game_message(game)
-            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-            await asyncio.sleep(0.3)
+        total = len(filtered_games) + len(filtered_dlc)
         
-        if len(filtered_games) > 8:
-            await update.message.reply_text(f"... и ещё {len(filtered_games) - 8} игр")
-    
-    # === DLC ===
-    if filtered_dlc:
-        header = f"\n📦 *DLC ({len(filtered_dlc)}):*\n"
-        await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+        if total == 0:
+            await update.message.reply_text(
+                f"😔 Не найдено игр с:\n"
+                f"• Ценой ≥{config.MIN_ORIGINAL_PRICE} ₽\n"
+                f"• Скидкой ≥{config.MIN_DISCOUNT}%"
+            )
+            return
         
-        for dlc in filtered_dlc[:5]:  # Максимум 5 DLC
-            msg = steam_bot.format_game_message(dlc)
-            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
-            await asyncio.sleep(0.3)
+        # === ИГРЫ ===
+        if filtered_games:
+            header = f"🎮 *ИГРЫ ({len(filtered_games)}):*\n"
+            await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+            
+            for game in filtered_games[:8]:  # Максимум 8 игр
+                msg = steam_bot.format_game_message(game)
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                await asyncio.sleep(0.3)
+            
+            if len(filtered_games) > 8:
+                await update.message.reply_text(f"... и ещё {len(filtered_games) - 8} игр")
         
-        if len(filtered_dlc) > 5:
-            await update.message.reply_text(f"... и ещё {len(filtered_dlc) - 5} DLC")
-    
-    # Проверяем watchlist
-    watchlist_deals = steam_bot.check_watchlist_deals()
-    if watchlist_deals:
-        await update.message.reply_text(
-            "⭐ *Из вашего списка отслеживания:*",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        for game in watchlist_deals:
-            msg = steam_bot.format_game_message(game)
-            await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+        # === DLC ===
+        if filtered_dlc:
+            header = f"\n📦 *DLC ({len(filtered_dlc)}):*\n"
+            await update.message.reply_text(header, parse_mode=ParseMode.MARKDOWN)
+            
+            for dlc in filtered_dlc[:5]:  # Максимум 5 DLC
+                msg = steam_bot.format_game_message(dlc)
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                await asyncio.sleep(0.3)
+            
+            if len(filtered_dlc) > 5:
+                await update.message.reply_text(f"... и ещё {len(filtered_dlc) - 5} DLC")
+        
+        # Проверяем watchlist (тоже в executor)
+        watchlist_deals = await loop.run_in_executor(None, steam_bot.check_watchlist_deals)
+        if watchlist_deals:
+            await update.message.reply_text(
+                "⭐ *Из вашего списка отслеживания:*",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            for game in watchlist_deals:
+                msg = steam_bot.format_game_message(game)
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    except Exception as e:
+        logger.error(f"Ошибка в check_deals: {e}")
+        await update.message.reply_text("❌ Ошибка при поиске скидок.")
 
 
 async def show_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -171,8 +178,15 @@ async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("🔍 Ищу игру...")
     
-    success, message = steam_bot.add_to_watchlist(app_id)
-    await update.message.reply_text(message)
+    # Запускаем блокирующую функцию в отдельном потоке
+    loop = asyncio.get_running_loop()
+    
+    try:
+        success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, app_id)
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении игры: {e}")
+        await update.message.reply_text("❌ Внутренняя ошибка при добавлении игры.")
 
 
 async def remove_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -222,6 +236,15 @@ async def auto_check_deals(context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Ошибка отправки уведомления: {e}")
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Логирует ошибки при обработке обновлений."""
+    logger.error(Exception(context.error), exc_info=context.error)
+    
+    if isinstance(update, Update) and update.effective_message:
+        text = "❌ Произошла ошибка при обработке запроса. Попробуйте позже."
+        await update.effective_message.reply_text(text)
+
+
 def main():
     """Запуск бота"""
     print("=" * 50)
@@ -230,17 +253,13 @@ def main():
     
     if config.TELEGRAM_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("\n❌ ОШИБКА: Укажите токен бота в config.py!")
-        print("\n1. Откройте @BotFather в Telegram")
-        print("2. Отправьте /newbot")
-        print("3. Скопируйте токен в config.py")
         return
-    
-    if config.CHAT_ID == "YOUR_CHAT_ID_HERE":
-        print("\n⚠️  ВНИМАНИЕ: Укажите ваш Chat ID в config.py")
-        print("   Узнайте его через @userinfobot в Telegram")
     
     # Создаём приложение
     app = Application.builder().token(config.TELEGRAM_TOKEN).build()
+    
+    # Добавляем обработчик ошибок
+    app.add_error_handler(error_handler)
     
     # Добавляем обработчики команд
     app.add_handler(CommandHandler("start", start))
@@ -257,7 +276,7 @@ def main():
         job_queue.run_repeating(
             auto_check_deals, 
             interval=config.CHECK_INTERVAL,
-            first=60  # Первая проверка через 60 сек после запуска
+            first=60
         )
         print(f"\n✅ Автопроверка включена (каждые {config.CHECK_INTERVAL // 60} мин)")
     
