@@ -215,50 +215,79 @@ def filter_games(games: list) -> tuple[list, list]:
 
 # === WATCHLIST ===
 
-def load_watchlist() -> list:
-    """Загружает список отслеживаемых игр"""
+def load_data() -> dict:
+    """Загружает весь файл данных"""
+    if not os.path.exists(WATCHLIST_PATH):
+        return {}
     try:
         with open(WATCHLIST_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("games", [])
+            return json.load(f)
     except:
-        return []
+        return {}
 
 
-def save_watchlist(games: list):
-    """Сохраняет список отслеживаемых игр"""
+def save_data(data: dict):
+    """Сохраняет данные в файл"""
     with open(WATCHLIST_PATH, "w", encoding="utf-8") as f:
-        json.dump({"games": games}, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def add_to_watchlist(app_id: int) -> tuple[bool, str]:
-    """
-    Добавляет игру в watchlist
+def get_user_watchlist(user_id: int) -> list:
+    """Возвращает watchlist конкретного пользователя"""
+    data = load_data()
+    str_id = str(user_id)
     
-    Returns:
-        (успех, сообщение)
+    # Миграция старого формата (если есть)
+    if "games" in data:
+        # Если это старый формат, переносим данные текущему пользователю (первому, кто обратился)
+        # или лучше привязать к config.CHAT_ID, если он задан
+        old_games = data.pop("games")
+        
+        # Если ID совпадает с владельцем (из конфига) или просто переносим
+        target_id = str(config.CHAT_ID) if config.CHAT_ID != "YOUR_CHAT_ID_HERE" else str_id
+        
+        if target_id not in data:
+             data[target_id] = old_games
+        else:
+             data[target_id].extend(old_games)
+             
+        save_data(data)
+        
+        # Перезагружаем после миграции
+        return data.get(str_id, [])
+        
+    return data.get(str_id, [])
+
+
+def add_to_watchlist(user_id: int, app_id: int) -> tuple[bool, str]:
     """
-    watchlist = load_watchlist()
+    Добавляет игру в watchlist пользователя
+    """
+    data = load_data()
+    str_id = str(user_id)
+    
+    if str_id not in data:
+        data[str_id] = []
+        
+    user_list = data[str_id]
     
     # Проверяем, не добавлена ли уже
-    for game in watchlist:
+    for game in user_list:
         if game["app_id"] == app_id:
-            return False, f"Игра уже в списке: {game['name']}"
+            return False, f"Игра уже в вашем списке: {game['name']}"
     
     # Получаем информацию об игре
     game_info = get_game_details(app_id)
     
     if not game_info:
-        # Если не удалось получить детальную инфо (например, нет цены или блок региона),
-        # пробуем получить хотя бы название через нейтральный регион (US)
         try:
             url = f"https://store.steampowered.com/api/appdetails"
-            params = {"appids": app_id, "cc": "us"}  # Используем US чтобы обойти блокировки
+            params = {"appids": app_id, "cc": "us"}
             response = requests.get(url, params=params, headers=HEADERS, timeout=10)
-            data = response.json()
+            json_data = response.json()
             
-            if str(app_id) in data and data[str(app_id)]["success"]:
-                game_data = data[str(app_id)]["data"]
+            if str(app_id) in json_data and json_data[str(app_id)]["success"]:
+                game_data = json_data[str(app_id)]["data"]
                 name = game_data.get("name", f"App {app_id}")
             else:
                 return False, f"Игра с ID {app_id} не найдена в Steam"
@@ -268,41 +297,81 @@ def add_to_watchlist(app_id: int) -> tuple[bool, str]:
     else:
         name = game_info["name"]
     
-    watchlist.append({"app_id": app_id, "name": name})
-    save_watchlist(watchlist)
+    user_list.append({"app_id": app_id, "name": name})
+    data[str_id] = user_list
+    save_data(data)
     
     return True, f"✅ Добавлено: {name}"
 
 
-def remove_from_watchlist(app_id: int) -> tuple[bool, str]:
-    """Удаляет игру из watchlist"""
-    watchlist = load_watchlist()
+def remove_from_watchlist(user_id: int, app_id: int) -> tuple[bool, str]:
+    """Удаляет игру из watchlist пользователя"""
+    data = load_data()
+    str_id = str(user_id)
     
-    for i, game in enumerate(watchlist):
+    if str_id not in data:
+         return False, "Ваш список пуст"
+         
+    user_list = data[str_id]
+    
+    for i, game in enumerate(user_list):
         if game["app_id"] == app_id:
-            removed = watchlist.pop(i)
-            save_watchlist(watchlist)
+            removed = user_list.pop(i)
+            data[str_id] = user_list
+            save_data(data)
             return True, f"❌ Удалено: {removed['name']}"
     
     return False, f"Игра с ID {app_id} не найдена в списке"
 
 
-def check_watchlist_deals() -> list:
-    """
-    Проверяет скидки на игры из watchlist
-    
-    Returns:
-        Список игр из watchlist со скидками, соответствующими критериям
-    """
-    watchlist = load_watchlist()
+def check_user_deals(user_id: int) -> list:
+    """Проверяет скидки для конкретного пользователя"""
+    user_list = get_user_watchlist(user_id)
     deals = []
     
-    for game in watchlist:
+    for game in user_list:
         info = get_game_details(game["app_id"])
         if info and info["discount_percent"] >= config.MIN_DISCOUNT:
             deals.append(info)
-    
+            
     return deals
+
+
+def check_all_users_deals() -> dict:
+    """
+    Проверяет скидки для ВСЕХ пользователей.
+    Возвращает словарь {user_id: [deals]}
+    """
+    data = load_data()
+    all_deals = {}
+    
+    # Чтобы не делать одинаковые запросы для одинаковых игр разных юзеров,
+    # можно сначала собрать все уникальные app_id, но пока сделаем просто.
+    # Оптимизация: кэшировать результаты get_game_details
+    
+    game_cache = {} # app_id -> info
+    
+    for user_id, games in data.items():
+        if user_id == "games": continue # Skip legacy key if exists
+        
+        user_deals = []
+        for game in games:
+            app_id = game["app_id"]
+            
+            if app_id in game_cache:
+                info = game_cache[app_id]
+            else:
+                info = get_game_details(app_id)
+                if info:
+                    game_cache[app_id] = info
+            
+            if info and info["discount_percent"] >= config.MIN_DISCOUNT:
+                user_deals.append(info)
+        
+        if user_deals:
+            all_deals[user_id] = user_deals
+            
+    return all_deals
 
 
 def format_game_message(game: dict) -> str:

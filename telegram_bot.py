@@ -89,6 +89,7 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Ищу выгодные скидки...")
     
     loop = asyncio.get_running_loop()
+    user_id = update.effective_user.id
     
     try:
         # Выполняем тяжелые запросы в отдельном потоке
@@ -137,8 +138,10 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(filtered_dlc) > 5:
                 await update.message.reply_text(f"... и ещё {len(filtered_dlc) - 5} DLC")
         
-        # Проверяем watchlist (тоже в executor)
-        watchlist_deals = await loop.run_in_executor(None, steam_bot.check_watchlist_deals)
+        # Проверяем watchlist пользователя
+        # Используем check_user_deals вместо check_watchlist_deals
+        watchlist_deals = await loop.run_in_executor(None, steam_bot.check_user_deals, user_id)
+        
         if watchlist_deals:
             await update.message.reply_text(
                 "⭐ *Из вашего списка отслеживания:*",
@@ -155,7 +158,8 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /watchlist - показать список отслеживания"""
-    watchlist = steam_bot.load_watchlist()
+    user_id = update.effective_user.id
+    watchlist = steam_bot.get_user_watchlist(user_id)
     
     if not watchlist:
         await update.message.reply_text(
@@ -192,6 +196,8 @@ async def show_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /add <app_id> - добавить игру"""
+    user_id = update.effective_user.id
+    
     if not context.args:
         await update.message.reply_text(
             "❌ Укажите App ID игры.\n"
@@ -208,11 +214,10 @@ async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text("🔍 Ищу игру...")
     
-    # Запускаем блокирующую функцию в отдельном потоке
     loop = asyncio.get_running_loop()
     
     try:
-        success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, app_id)
+        success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, user_id, app_id)
         await update.message.reply_text(message)
     except Exception as e:
         logger.error(f"Ошибка при добавлении игры: {e}")
@@ -221,6 +226,8 @@ async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def remove_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда /remove <app_id> - удалить игру"""
+    user_id = update.effective_user.id
+    
     if not context.args:
         await update.message.reply_text(
             "❌ Укажите App ID игры.\n"
@@ -235,40 +242,46 @@ async def remove_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ App ID должен быть числом")
         return
     
-    success, message = steam_bot.remove_from_watchlist(app_id)
+    success, message = steam_bot.remove_from_watchlist(user_id, app_id)
     await update.message.reply_text(message)
 
 
 async def auto_check_deals(context: ContextTypes.DEFAULT_TYPE):
-    """Автоматическая проверка скидок на игры из watchlist"""
+    """Автоматическая проверка скидок для ВСЕХ пользователей"""
     global notified_deals
     
-    watchlist_deals = steam_bot.check_watchlist_deals()
+    # Получаем словарь {user_id: [deals]}
+    all_users_deals = steam_bot.check_all_users_deals()
     
-    for game in watchlist_deals:
-        deal_key = f"{game['app_id']}_{game['discount_percent']}"
+    for user_id, games in all_users_deals.items():
+        if not games: continue
         
-        if deal_key not in notified_deals:
-            notified_deals.add(deal_key)
+        for game in games:
+            # Уникальный ключ уведомления: UserID + AppID + Discount
+            deal_key = f"{user_id}_{game['app_id']}_{game['discount_percent']}"
             
-            msg = (
-                "🎉 *Новая скидка на игру из вашего списка!*\n\n" +
-                steam_bot.format_game_message(game)
-            )
-            
-            try:
-                await context.bot.send_message(
-                    chat_id=config.CHAT_ID,
-                    text=msg,
-                    parse_mode=ParseMode.MARKDOWN
+            if deal_key not in notified_deals:
+                notified_deals.add(deal_key)
+                
+                msg = (
+                    "🎉 *Новая скидка на игру из вашего списка!*\n\n" +
+                    steam_bot.format_game_message(game)
                 )
-            except Exception as e:
-                logger.error(f"Ошибка отправки уведомления: {e}")
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(user_id),
+                        text=msg,
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработка нажатий на инлайн-кнопки"""
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()  # Отвечаем, чтобы убрать часики
     
     data = query.data
@@ -278,7 +291,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Используем executor для асинхронности
         loop = asyncio.get_running_loop()
         try:
-            success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, app_id)
+            success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, user_id, app_id)
             if success:
                 new_text = query.message.text + f"\n\n✅ Добавлено!"
                 await query.edit_message_text(text=new_text, parse_mode=ParseMode.MARKDOWN)
@@ -292,7 +305,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         app_id = int(data.split("_")[1])
         loop = asyncio.get_running_loop()
         try:
-            success, message = await loop.run_in_executor(None, steam_bot.remove_from_watchlist, app_id)
+            success, message = await loop.run_in_executor(None, steam_bot.remove_from_watchlist, user_id, app_id)
             if success:
                 # Обновляем список или сообщение
                 new_text = query.message.text + f"\n\n❌ Удалено!"
@@ -342,14 +355,13 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     
     # Добавляем автоматическую проверку
-    if config.CHAT_ID != "YOUR_CHAT_ID_HERE":
-        job_queue = app.job_queue
-        job_queue.run_repeating(
-            auto_check_deals, 
-            interval=config.CHECK_INTERVAL,
-            first=60
-        )
-        print(f"\n✅ Автопроверка включена (каждые {config.CHECK_INTERVAL // 60} мин)")
+    job_queue = app.job_queue
+    job_queue.run_repeating(
+        auto_check_deals, 
+        interval=config.CHECK_INTERVAL,
+        first=60
+    )
+    print(f"\n✅ Автопроверка включена (каждые {config.CHECK_INTERVAL // 60} мин)")
     
     print("\n🚀 Бот запущен! Нажмите Ctrl+C для остановки.\n")
     
