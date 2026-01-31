@@ -95,7 +95,10 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             for game in filtered_games[:8]:  # Максимум 8 игр
                 msg = steam_bot.format_game_message(game)
-                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ Добавить", callback_data=f"add_{game['app_id']}")]
+                ])
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
                 await asyncio.sleep(0.3)
             
             if len(filtered_games) > 8:
@@ -108,7 +111,10 @@ async def check_deals(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             for dlc in filtered_dlc[:5]:  # Максимум 5 DLC
                 msg = steam_bot.format_game_message(dlc)
-                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("➕ Добавить", callback_data=f"add_{dlc['app_id']}")]
+                ])
+                await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
                 await asyncio.sleep(0.3)
             
             if len(filtered_dlc) > 5:
@@ -143,21 +149,28 @@ async def show_watchlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    text = "📋 *Ваш список отслеживания:*\n\n"
+    await update.message.reply_text("📋 *Ваш список отслеживания:*", parse_mode=ParseMode.MARKDOWN)
+    
+    loop = asyncio.get_running_loop()
     
     for i, game in enumerate(watchlist, 1):
-        # Получаем текущую цену
-        info = steam_bot.get_game_details(game["app_id"])
+        # Получаем данные асинхронно
+        info = await loop.run_in_executor(None, steam_bot.get_game_details, game["app_id"])
+        
         if info and info["discount_percent"] > 0:
-            price_info = f"🔥 -{info['discount_percent']}% ({info['final_price']:.0f} грн)"
+            price_info = f"🔥 -{info['discount_percent']}% ({info['final_price']:.0f} {info.get('currency', 'rub')})"
         elif info:
-            price_info = f"{info['original_price']:.0f} грн"
+            price_info = f"{info['original_price']:.0f} {info.get('currency', 'rub')}"
         else:
             price_info = "цена неизвестна"
             
-        text += f"{i}. *{game['name']}*\n   ID: `{game['app_id']}` | {price_info}\n\n"
-    
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        text = f"{i}. *{game['name']}*\nID: `{game['app_id']}` | {price_info}"
+        
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Удалить", callback_data=f"del_{game['app_id']}")]
+        ])
+        
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
 
 
 async def add_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -236,6 +249,44 @@ async def auto_check_deals(context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Ошибка отправки уведомления: {e}")
 
 
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обработка нажатий на инлайн-кнопки"""
+    query = update.callback_query
+    await query.answer()  # Отвечаем, чтобы убрать часики
+    
+    data = query.data
+    
+    if data.startswith("add_"):
+        app_id = int(data.split("_")[1])
+        # Используем executor для асинхронности
+        loop = asyncio.get_running_loop()
+        try:
+            success, message = await loop.run_in_executor(None, steam_bot.add_to_watchlist, app_id)
+            if success:
+                new_text = query.message.text + f"\n\n✅ Добавлено!"
+                await query.edit_message_text(text=new_text, parse_mode=ParseMode.MARKDOWN)
+            else:
+                 await query.message.reply_text(message)
+        except Exception as e:
+            logger.error(f"Ошибка кнопки add: {e}")
+            await query.message.reply_text("❌ Ошибка при добавлении.")
+            
+    elif data.startswith("del_"):
+        app_id = int(data.split("_")[1])
+        loop = asyncio.get_running_loop()
+        try:
+            success, message = await loop.run_in_executor(None, steam_bot.remove_from_watchlist, app_id)
+            if success:
+                # Обновляем список или сообщение
+                new_text = query.message.text + f"\n\n❌ Удалено!"
+                await query.edit_message_text(text=new_text, parse_mode=ParseMode.MARKDOWN)
+            else:
+                await query.message.reply_text(message)
+        except Exception as e:
+            logger.error(f"Ошибка кнопки del: {e}")
+            await query.message.reply_text("❌ Ошибка при удалении.")
+
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Логирует ошибки при обработке обновлений."""
     logger.error(Exception(context.error), exc_info=context.error)
@@ -269,6 +320,9 @@ def main():
     app.add_handler(CommandHandler("list", show_watchlist))  # Алиас
     app.add_handler(CommandHandler("add", add_game))
     app.add_handler(CommandHandler("remove", remove_game))
+    
+    # Обработчик кнопок
+    app.add_handler(CallbackQueryHandler(button_handler))
     
     # Добавляем автоматическую проверку
     if config.CHAT_ID != "YOUR_CHAT_ID_HERE":
